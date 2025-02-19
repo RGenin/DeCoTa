@@ -117,8 +117,8 @@ if __name__ == '__main__':
 
 
     """ pre-train & resume """
-    pretrain_src_checkpoint = './pretrained_models/pretrained_src_{}_to_{}.pth.tar'.format(args.source, args.target)
-    pretrain_t_checkpoint = './pretrained_models/pretrained_tgt_{}_to_{}.pth.tar'.format(args.source, args.target)
+    pretrain_src_checkpoint = './pretrained_models/pretrained_src_{}_to_{}.pth.tar'.format(args.source, args.target) # modèle fine tunné sur la target : wg (UDA) (à vérifier)
+    pretrain_t_checkpoint = './pretrained_models/pretrained_tgt_{}_to_{}.pth.tar'.format(args.source, args.target)   # modèle fine tunné sur la source puis sur la target : wf (SSL)
 
     if args.net_resume:
 
@@ -402,7 +402,7 @@ if __name__ == '__main__':
 
                 """ensemble results"""
                 output = torch.softmax(output1, dim=1) + torch.softmax(output2, dim=1) # sommes des distributions de proba # pas supérieur à 1 ???
-                pred = output.max(1)[1] # récupération de la prédictions la plus probable
+                pred = output.max(1)[1] # récupération du labels le plus probable d'après la prédictions
 
                 total += gt_labels_t.size(0) # ajut à total des labels utilisés pour les prédictions
                 correct += pred.eq(gt_labels_t).sum().item() # ajout des labels bien prédits parla méthode ensembliste
