@@ -5,14 +5,22 @@ from PIL import Image
 
 
 def pil_loader(path):
+    # print(f"PIL LOADER : Trying to load: {path}")
+    if not os.path.exists(path):  
+        # print(f"ATTENTION : file  not found: {path}")
+        return None 
     with open(path, 'rb') as f:
         img = Image.open(f)
+        # if img:
+        #     print(f"{img} a bien été chargé")
         return img.convert('RGB')
 
 
 def make_dataset_fromlist(image_list):
     with open(image_list) as f:
-        image_index = [x.split(' ')[0] for x in f.readlines()]
+        # print("DECOUPAGE :", [x.split(' ')[0] for x in f.readlines()])
+        image_index = [x.split(' ')[0].replace('real/', '').replace('clipart/', '') for x in f.readlines()]
+        # print("MAKEDATASET FROM LIST : ", image_index)
     with open(image_list) as f:
         label_list = []
         selected_list = []
@@ -23,6 +31,7 @@ def make_dataset_fromlist(image_list):
         image_index = np.array(image_index)
         label_list = np.array(label_list)
     image_index = image_index[selected_list]
+    # print("MAKEDATASET FROM LIST : ", image_index)
     return image_index, label_list
 
 
@@ -39,7 +48,10 @@ def return_classlist(image_list):
 class Imagelists_VISDA(object):
     def __init__(self, image_list, root="./data/multi/",
                  transform=None, target_transform=None, test=False):
+        # 
+        # ("IMAGELIST image_list:", image_list)
         imgs, labels = make_dataset_fromlist(image_list)
+        # print("IMAGELIST  imgs:", imgs)
         self.imgs = imgs
         self.labels = labels
         self.transform = transform
@@ -58,6 +70,9 @@ class Imagelists_VISDA(object):
         """
         path = os.path.join(self.root, self.imgs[index])
         target = self.labels[index]
+        # print(f"IMAGELIST_VISDA : path {path}")
+        # print(f"IMAGELIST_VISDA : root {self.root}")
+        # print(f"IMAGELIST_VISDA : self.imgs[index] {self.imgs[index]}")
         img = self.loader(path)
         if self.transform is not None:
             img = self.transform(img)

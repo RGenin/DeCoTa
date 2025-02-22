@@ -23,6 +23,7 @@ def return_dataset(args, return_idx=False):
         os.path.join(base_path,
                      'labeled_source_images_' +
                      args.source + '.txt')
+    # print("RETURN DATASET IMAGESETFILE :", image_set_file_s)
     image_set_file_t = \
         os.path.join(base_path,
                      'labeled_target_images_' +
@@ -84,9 +85,9 @@ def return_dataset(args, return_idx=False):
     class_list = return_classlist(image_set_file_s)
     print("%d classes in this dataset" % len(class_list))
     if args.net == 'alexnet':
-        bs = 32
+        bs = 16 # initiallement 32
     else:
-        bs = 24
+        bs = 12 # initiallement : 24
 
     source_loader = torch.utils.data.DataLoader(source_dataset, batch_size=bs,
                                                 num_workers=3, shuffle=True,
