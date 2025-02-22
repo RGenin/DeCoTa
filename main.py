@@ -286,7 +286,7 @@ def train():
             y_a, y_b = gt_labels_t[t_idx], psl_u_1  # y_a => vrais labels d'images étiquetées dans target, y_b => pseudos labels
 
             out_mix = net(mixed_x)  # prédictions des étiquettes avec comme jeu de données les images ayant servies au MixUp par !!NET(wf)!!!
-            loss_mix_1 = lam * criterion(out_mix, y_a) + (1-lam) * criterion(out_mix, y_b) # pertes associées
+            loss_mix_1 = lam * criterion(out_mix, y_a) + (1-lam) * criterion(out_mix, y_b) # pertes associées : criterion(out_mix, y_a) = perte calculée sur les vrais labels (y_a) des images étiquetées, perte calculée sur les pseudo-labels attribués aux images non étiquetées. Donc c'est une une combinaison pondérée entre la perte sur les labels réels et la perte sur les pseudo-labels.
 
             loss_1 += loss_mix_1 # ajout de la perte sur MixUp à la perte globale sur target par net : voir aide
             zero_grad_all()
