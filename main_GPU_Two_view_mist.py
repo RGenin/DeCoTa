@@ -107,7 +107,7 @@ record_file = os.path.join(record_dir,
                            'exp_net_%s_%s_to_%s_num_%s_%d' %
                            (args.net, args.source, args.target, args.num, args.runs))
 
-record_dir_confident_predictions = './record/%s/test_confident_predictions/TwoViewMiST' % args.dataset
+record_dir_confident_predictions = './record/%s/test_confident_predictions_TwoViewMiST' % args.dataset
 if not os.path.exists(record_dir_confident_predictions):
     os.makedirs(record_dir_confident_predictions)
 record_dir_confident_predictions = os.path.join(record_dir_confident_predictions,
