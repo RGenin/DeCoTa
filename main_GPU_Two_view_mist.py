@@ -13,8 +13,8 @@ from utils.return_dataset import return_dataset
 parser = argparse.ArgumentParser(description='Two-view MIST for Semi-supervised Domain Adaptation')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
                     help='maximum number of iterations to train (default: 20000)')
-parser.add_argument('--method', type=str, default='mist',
-                    choices=['mico', 'mist'])
+parser.add_argument('--method', type=str, default='TwoViewMist',
+                    choices=['TwoViewMist'])
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--multi', type=float, default=0.1, metavar='MLT',
@@ -312,7 +312,7 @@ def train():
 
         if step % args.save_interval == 0:
             acc_test_net, acc_test_twin, acc_test, total_test, confident_predictions_test = test_ensemble(target_loader_test)
-            acc_val_net, acc_val_twin, acc_val = test_ensemble(target_loader_val)
+            acc_val_net, acc_val_twin, acc_val, total_val, confident_predictions_val = test_ensemble(target_loader_val)
             net.train()
             twin.train()
             if acc_val >= best_acc:

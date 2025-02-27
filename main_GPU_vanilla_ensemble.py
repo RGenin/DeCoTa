@@ -13,8 +13,8 @@ from utils.return_dataset import return_dataset
 parser = argparse.ArgumentParser(description='Vanilla Ensemble: deux modèles MIST entraînés indépendamment et combinés en fin de parcours')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
                     help='Nombre maximum d’itérations (default: 20000)')
-parser.add_argument('--method', type=str, default='mist',
-                    choices=['mico', 'mist'])
+parser.add_argument('--method', type=str, default='VanillaEnsemble',
+                    choices=['VanillaEnsemble'])
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='Learning rate (default: 0.01)')
 parser.add_argument('--multi', type=float, default=0.1, metavar='MLT',
@@ -275,8 +275,8 @@ def train():
             print(log_train)
 
         if step % args.save_interval == 0:
-            acc_net, acc_twin, acc_ensemble = test_ensemble(target_loader_test)
-            acc_val_net, acc_val_twin, acc_val = test_ensemble(target_loader_val)
+            acc_net, acc_twin, acc_ensemble, total_test, confident_predictions_test = test_ensemble(target_loader_test)
+            acc_val_net, acc_val_twin, acc_val, total_val, confident_predictions_val = test_ensemble(target_loader_val)
             net.train()
             twin.train()
             if acc_val >= best_acc:

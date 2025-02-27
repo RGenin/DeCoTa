@@ -13,6 +13,8 @@ from utils.return_dataset import return_dataset
 parser = argparse.ArgumentParser(description='S+T+pseudo-U for Semi-supervised Domain Adaptation')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
                     help='maximum number of iterations to train (default: 20000)')
+parser.add_argument('--method', type=str, default='STpseudo_u',
+                    choices=['STpseudo_u'])
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')
 parser.add_argument('--multi', type=float, default=0.1, metavar='MLT',
