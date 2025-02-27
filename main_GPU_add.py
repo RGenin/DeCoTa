@@ -358,6 +358,7 @@ def test_ensemble(loader):
 
     with torch.no_grad():
         for batch_idx, data_t in enumerate(loader):
+            print('loop test')
             im_data_t.resize_(data_t[0].size()).copy_(data_t[0])
             gt_labels_t.resize_(data_t[1].size()).copy_(data_t[1])
             output1 = net(im_data_t)
@@ -395,6 +396,7 @@ def test_classifier_f3a(loader):
     
     with torch.no_grad():
         for batch_idx, data_t in enumerate(loader):
+            print('loop test classifier 3a')
             im_data_t.resize_(data_t[0].size()).copy_(data_t[0])
             gt_labels_t.resize_(data_t[1].size()).copy_(data_t[1])
             output1 = net(im_data_t)
