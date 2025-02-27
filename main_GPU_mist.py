@@ -106,7 +106,7 @@ record_dir_confident_predictions = './record/%s/test_confident_predictions_mist'
 if not os.path.exists(record_dir_confident_predictions):
     os.makedirs(record_dir_confident_predictions)
 record_dir_confident_predictions = os.path.join(record_dir_confident_predictions,
-                              'exp_net_%s_%s_to_%s_num_%s_%d' %
+                              'exp_net_%s_%s_to_%s_num_%s_%d.txt' %
                               (args.net, args.source, args.target, args.num, args.runs))
 
 """ pre-train & resume """
