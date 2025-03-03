@@ -54,6 +54,7 @@ multi = [['real', 'clipart'], ['real', 'painting'],
          ['painting', 'clipart'], ['clipart', 'sketch'],
          ['sketch', 'painting'], ['real', 'sketch'],
          ['painting', 'real']]
+
 if args.st != 0 and args.dataset == 'multi':
     args.source, args.target = multi[args.st-1]
 
@@ -64,6 +65,14 @@ print('Dataset {} | Source {} | Target {} | Num par classe {} | Réseau {}'.form
 source_loader, target_loader, target_loader_unl, target_loader_val, \
     target_loader_test, class_list = return_dataset(args=args, return_idx=False)
 
+# Définition du device : GPU si disponible, sinon CPU
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if device.type == 'cuda':
+    torch.cuda.manual_seed(args.seed)
+else:
+    torch.manual_seed(args.seed)
+print("Device utilisé :", device)
+    
 # Pour Vanilla Ensemble, nous entraînons deux modèles MIST indépendants
 if args.net == 'resnet34':
     net = MetaResnet34(num_class=len(class_list))
@@ -97,8 +106,8 @@ record_dir = os.path.join('./record', args.dataset, 'vanilla_ensemble')
 if not os.path.exists(record_dir):
     os.makedirs(record_dir)
 record_file = os.path.join(record_dir,
-                           'exp_net_{}_{}_to_{}_num_{}_{}.txt'.format(
-                               args.net, args.source, args.target, args.num, args.runs))
+                           'exp_net_%s_%s_to_%s_num_%s_%d' %
+                           (args.net, args.source, args.target, args.num, args.runs))
 
 record_dir_confident_predictions = './record/%s/test_confident_predictions_Vanilla_Ensemble' % args.dataset
 if not os.path.exists(record_dir_confident_predictions):
@@ -106,10 +115,6 @@ if not os.path.exists(record_dir_confident_predictions):
 record_dir_confident_predictions = os.path.join(record_dir_confident_predictions,
                               'exp_net_%s_%s_to_%s_num_%s_%d.txt' %
                               (args.net, args.source, args.target, args.num, args.runs))
-
-# Détection du GPU
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print("Utilisation de l'appareil :", device)
 
 # Chargement des checkpoints pré-entraînés (pour initialisation)
 pretrain_t_checkpoint = './pretrained_models/pretrained_tgt_{}_to_{}.pth.tar'.format(args.source, args.target)
@@ -144,13 +149,21 @@ def train():
     net.train()
     twin.train()
 
-    # Chaque modèle a son propre optimiseur
-    optimizer_net = optim.SGD(params + params_F1, momentum=0.9, weight_decay=0.0005, nesterov=True)
-    optimizer_twin = optim.SGD(params_2 + params_F2, momentum=0.9, weight_decay=0.0005, nesterov=True)
+    # Optimiseurs distincts pour chaque réseau
+    optimizer_g = optim.SGD(params, momentum=0.9,
+                            weight_decay=0.0005, nesterov=True)
+    optimizer_f = optim.SGD(params_F1, lr=1.0, momentum=0.9,
+                            weight_decay=0.0005, nesterov=True)
+    optimizer_g_2 = optim.SGD(params_2, momentum=0.9,
+                              weight_decay=0.0005, nesterov=True)
+    optimizer_f_2 = optim.SGD(params_F2, lr=1.0, momentum=0.9,
+                              weight_decay=0.0005, nesterov=True)
 
-    # Sauvegarde des lr initiales
-    lr_net = [group["lr"] for group in optimizer_net.param_groups]
-    lr_twin = [group["lr"] for group in optimizer_twin.param_groups]
+    # Sauvegarde des taux d'apprentissage initiaux
+    param_lr = [group["lr"] for group in optimizer_g.param_groups]
+    param_lr_f = [group["lr"] for group in optimizer_f.param_groups]
+    param_lr_2 = [group["lr"] for group in optimizer_g_2.param_groups]
+    param_lr_f2 = [group["lr"] for group in optimizer_f_2.param_groups]
 
     all_step = args.steps
     data_iter_s = iter(source_loader)
@@ -162,6 +175,7 @@ def train():
     best_acc = 0
     counter = 0
     base_lr = args.lr
+    
     criterion = nn.CrossEntropyLoss().to(device)
     criterion_no_reduce = nn.CrossEntropyLoss(reduction='none').to(device)
     alpha = 1  # Paramètre MixUp
@@ -169,9 +183,11 @@ def train():
     for step in range(args.start, all_step):
         print('Step : {}'.format(step))
 
-        optimizer_net = inv_lr_scheduler(lr_net, optimizer_net, step, init_lr=base_lr)
-        optimizer_twin = inv_lr_scheduler(lr_twin, optimizer_twin, step, init_lr=base_lr)
-
+        optimizer_g = inv_lr_scheduler(param_lr, optimizer_g, step, init_lr=base_lr)
+        optimizer_f = inv_lr_scheduler(param_lr_f, optimizer_f, step, init_lr=base_lr)
+        optimizer_g_2 = inv_lr_scheduler(param_lr_2, optimizer_g_2, step, init_lr=base_lr)
+        optimizer_f_2 = inv_lr_scheduler(param_lr_f2, optimizer_f_2, step, init_lr=base_lr)
+        
         # Réinitialisation des itérateurs si besoin
         if step % len_train_target == 0:
             data_iter_t = iter(target_loader)
@@ -197,7 +213,9 @@ def train():
         ##############################
         # Mise à jour du modèle "net" (Vue 1) avec MIST (self‑training)
         ##############################
-        optimizer_net.zero_grad()
+        # Remplacer optimizer_net par les deux optimisateurs de net
+        optimizer_g.zero_grad()
+        optimizer_f.zero_grad()
         out_t_net = net(im_data_t)
         loss_target_net = criterion_no_reduce(out_t_net, gt_labels_t).mean()
         out_s_net = net(im_data_s)
@@ -230,12 +248,15 @@ def train():
 
         total_loss_net = loss_source_net + loss_target_net + loss_mix_net + loss_mix_net2
         total_loss_net.backward()
-        optimizer_net.step()
+        optimizer_g.step()
+        optimizer_f.step()
 
         ##############################
         # Mise à jour du modèle "twin" (Vue 2) avec MIST (self‑training)
         ##############################
-        optimizer_twin.zero_grad()
+        # Remplacer optimizer_twin par les deux optimisateurs de twin
+        optimizer_g_2.zero_grad()
+        optimizer_f_2.zero_grad()
         out_t_twin = twin(im_data_t)
         loss_target_twin = criterion_no_reduce(out_t_twin, gt_labels_t).mean()
         out_s_twin = twin(im_data_s)
@@ -267,18 +288,22 @@ def train():
 
         total_loss_twin = loss_source_twin + loss_target_twin + loss_mix_twin + loss_mix_twin2
         total_loss_twin.backward()
-        optimizer_twin.step()
+        optimizer_g_2.step()
+        optimizer_f_2.step()
 
         log_train = 'Source: {} | Target: {} | Step: {} | lr: {} | Method: Vanilla Ensemble\n'.format(
-            args.source, args.target, step, optimizer_net.param_groups[0]['lr'])
+            args.source, args.target, step, optimizer_g.param_groups[0]['lr'])
+        
         if step % args.log_interval == 0:
             print(log_train)
 
         if step % args.save_interval == 0:
             acc_net, acc_twin, acc_ensemble, total_test, confident_predictions_test = test_ensemble(target_loader_test)
             acc_val_net, acc_val_twin, acc_val, total_val, confident_predictions_val = test_ensemble(target_loader_val)
+            
             net.train()
             twin.train()
+            
             if acc_val >= best_acc:
                 best_acc = acc_val
                 best_acc_test = acc_ensemble
@@ -329,7 +354,6 @@ def test_ensemble(loader):
             
             # Ensemble : somme des probabilités softmax
             ensemble_out = torch.softmax(out_net, dim=1) + torch.softmax(out_twin, dim=1)
-            # pred_ensemble = ensemble_out.max(1)[1]
             confidences, pred_ensemble = ensemble_out.max(1)
             confident_predictions += (confidences >= args.th).sum().item()
             
@@ -342,12 +366,12 @@ def test_ensemble(loader):
     acc_twin = 100.0 * correct_twin / total
     acc_ensemble = 100.0 * correct_ensemble / total
     
-    return acc_net, acc_twin, total, confident_predictions
+    return acc_net, acc_twin, acc_ensemble, total, confident_predictions
 
 if __name__ == '__main__':
     if args.eval:
         print('Mode évaluation...')
-        acc_net, acc_twin, acc_ensemble = test_ensemble(target_loader_test)
+        acc_net, acc_twin, acc_ensemble, _, _ = test_ensemble(target_loader_test)
         print('Précision Net: {:.2f}% | Twin: {:.2f}% | Ensemble: {:.2f}%'.format(acc_net, acc_twin, acc_ensemble))
     else:
         train()
