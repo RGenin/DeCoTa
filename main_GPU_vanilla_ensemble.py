@@ -9,6 +9,7 @@ from torch.autograd import Variable
 from model.resnet_model import MetaResnet34
 from utils.lr_schedule import inv_lr_scheduler
 from utils.return_dataset import return_dataset
+import re
 
 
 parser = argparse.ArgumentParser(description='DeCoTa (adapté en Vanilla Ensemble) pour la Semi-supervised Domain Adaptation')
@@ -101,6 +102,14 @@ if not os.path.exists(record_dir):
 record_file = os.path.join(record_dir,
                            'exp_net_%s_%s_to_%s_num_%s_%d' %
                            (args.net, args.source, args.target, args.num, args.runs))
+
+record_dir_confident_predictions = './record/%s/test_confident_predictions_VanillaEnsemble' % args.dataset
+if not os.path.exists(record_dir_confident_predictions):
+    os.makedirs(record_dir_confident_predictions)
+record_dir_confident_predictions = os.path.join(record_dir_confident_predictions,
+                              'exp_net_%s_%s_to_%s_num_%s_%d.txt' %
+                              (args.net, args.source, args.target, args.num, args.runs))
+
 
 """ Pré-entraînement & reprise """
 pretrain_src_checkpoint = './pretrained_models/pretrained_src_{}_to_{}.pth.tar'.format(args.source, args.target)
@@ -269,8 +278,8 @@ def train():
             print(log_train)
 
         if step % args.save_interval == 0:
-            acc_test_net, acc_test_twin, acc_test = test_ensemble(target_loader_test)
-            acc_val_net, acc_val_twin, acc_val = test_ensemble(target_loader_val)
+            acc_test_net, acc_test_twin, acc_test, confident_predictions_test, correct_confident_test = test_ensemble(target_loader_test)
+            acc_val_net, acc_val_twin, acc_val, confident_predictions_val, correct_confident_val = test_ensemble(target_loader_val)
             net.train()
             twin.train()
             if acc_val >= best_acc:
@@ -279,11 +288,18 @@ def train():
                 counter = 0
             else:
                 counter += 1
+            
             print('Test acc: %f | Best Test acc: %f | Best Val acc: %f' % (acc_test, best_acc_test, best_acc))
             print('Record: %s' % record_file)
             with open(record_file, 'a') as f:
                 f.write('Step %d | net: %f | twin: %f | ensemble: %f | best ensemble: %f | best val: %f \n' % 
                         (step, acc_test_net, acc_test_twin, acc_test, best_acc_test, best_acc))
+                
+            print('record %s' % record_dir_confident_predictions)
+            with open(record_dir_confident_predictions, 'a') as f:
+                f.write('%d %d %d \n' %
+                        (step, confident_predictions_test, correct_confident_test))
+                
             net.train()
             twin.train()
             if args.save_check:
@@ -320,21 +336,32 @@ def test_ensemble(loader):
             correct_test_2 += pred_test_2.eq(gt_labels_t).sum().item()
 
             output = torch.softmax(output1, dim=1) + torch.softmax(output2, dim=1)
-            pred = output.max(1)[1]
+            confidences, pred = output.max(1)
 
             total += gt_labels_t.size(0)
             correct += pred.eq(gt_labels_t).sum().item()
+            
+            # Décompte des prédictions de confiance élevée
+            confident_mask = confidences >= args.th
+            confident_predictions += confident_mask.sum().item() # équivalent à 'total'
+            # Décompte des prédictions correctes parmis celles de confiances élevées
+            correct_confident = (pred.eq(gt_labels_t) & confident_mask).sum().item()
 
     acc_test_1 = 100. * (float(correct_test_1)/total)
     acc_test_2 = 100. * (float(correct_test_2)/total)
     acc = 100. * (float(correct)/total)
 
-    return acc_test_1, acc_test_2, acc
+    return acc_test_1, acc_test_2, acc, confident_predictions, correct_confident
 
 if __name__ == '__main__':
     if args.eval:
         print('Mode evaluation...')
-        acc_test_net, acc_test_twin, acc_test = test_ensemble(target_loader_test)
+        acc_test_net, acc_test_twin, acc_test, confident_predictions_test, correct_confident_test = test_ensemble(target_loader_test)
         print('net acc: {}, twin acc: {}, ensemble acc: {}'.format(acc_test_net, acc_test_twin, acc_test))
+        step = int(re.search(r'\d+', args.net_resume).group())
+        print('record %s' % record_dir_confident_predictions)
+        with open(record_dir_confident_predictions, 'a') as f:
+            f.write('%d %d %d \n' %
+                    (step, confident_predictions_test, correct_confident_test))
     else:
         train()

@@ -9,6 +9,7 @@ from torch.autograd import Variable
 from model.resnet_model import MetaResnet34
 from utils.lr_schedule import inv_lr_scheduler
 from utils.return_dataset import return_dataset
+import re
 
 parser = argparse.ArgumentParser(description='MIST: MixUp Self-Training for Semi-supervised Domain Adaptation')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
@@ -239,8 +240,8 @@ def train():
             print(log_train)
 
         if step % args.save_interval == 0:
-            acc_test, total_test, confident_predictions_test = test(model, target_loader_test)
-            acc_val, total_val, confident_predictions_val = test(model, target_loader_val)
+            acc_test, confident_predictions_test, correct_confident_test = test(model, target_loader_test)
+            acc_val, confident_predictions_val, correct_confident_val = test(model, target_loader_val)
             model.train()
             if acc_val >= best_acc:
                 best_acc = acc_val
@@ -265,7 +266,7 @@ def train():
             print('record %s' % record_dir_confident_predictions)
             with open(record_dir_confident_predictions, 'a') as f:
                 f.write('%d %d %d \n' %
-                        (step, total_test, confident_predictions_test))
+                        (step, confident_predictions_test, correct_confident_test))
             
             model.train()
             if args.save_check:
@@ -294,10 +295,15 @@ def test(model, loader):
             
             total += gt_labels_t.size(0)
             correct += pred.eq(gt_labels_t).sum().item()
-            confident_predictions += (confidences >= args.th).sum().item()
+            
+            # Décompte des prédictions avec un niveau de confiance élevée
+            mask_confident = confidences >= args.th
+            confident_predictions += mask_confident.sum().item()
+            # Décompte des prédictions correctes parmis celle qui ont eu un niveau de confiance élevée
+            correct_confident = (pred.eq(gt_labels_s) & mask_confident).sum().item()
             
     acc = 100. * (float(correct)/total)
-    return acc, total, confident_predictions
+    return acc, confident_predictions, correct_confident
 
 # def test_classifier_f3a(loader):
 #     model.eval()
@@ -339,7 +345,12 @@ def test(model, loader):
 if __name__ == '__main__':
     if args.eval:
         print('Eval mode...')
-        acc_test = test(model, target_loader_test)
+        acc_test, confident_predictions_test, correct_confident_test = test(model, target_loader_test)
         print('Model acc: {}'.format(acc_test))
+        step = int(re.search(r'\d+', args.net_resume).group())
+        print('record %s' % record_dir_confident_predictions)
+        with open(record_dir_confident_predictions, 'a') as f:
+            f.write('%d %d %d \n' %
+                    (step, confident_predictions_test, correct_confident_test))
     else:
         train()

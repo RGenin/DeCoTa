@@ -9,6 +9,7 @@ from torch.autograd import Variable
 from model.resnet_model import MetaResnet34
 from utils.lr_schedule import inv_lr_scheduler
 from utils.return_dataset import return_dataset
+import re
 
 parser = argparse.ArgumentParser(description='S+T+pseudo-U for Semi-supervised Domain Adaptation')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
@@ -207,14 +208,17 @@ def train():
 
         log_train = 'S {} T {} Train step: {} lr: {} Method: S+T+pseudo-U\n'.format(
             args.source, args.target, step, current_lr)
+        
         if step % args.log_interval == 0:
             print(log_train + 'Loss: {:.4f} (T: {:.4f}, S: {:.4f}, pseudo-U: {:.4f})'.format(
                 total_loss.item(), loss_t.item(), loss_s.item(), loss_u if isinstance(loss_u, float) else loss_u.item()))
 
         if step % args.save_interval == 0:
-            acc_test, total_test, confident_predictions_test = test(net, target_loader_test)
-            acc_val, total_val, confident_predictions_val = test(net, target_loader_val)
+            acc_test, confident_predictions_test, correct_confident_test = test(net, target_loader_test)
+            acc_val, total_val_test, confident_predictions_val_test = test(net, target_loader_val)
+            
             net.train()
+            
             if acc_val >= best_acc:
                 best_acc = acc_val
                 best_acc_test = acc_test
@@ -230,7 +234,7 @@ def train():
             print('record %s' % record_dir_confident_predictions)
             with open(record_dir_confident_predictions, 'a') as f:
                 f.write('%d %d %d \n' %
-                        (step, total_test, confident_predictions_test))
+                        (step, confident_predictions_test, correct_confident_test))
                 
             if args.save_check:
                 print('Saving model at step:', step)
@@ -260,14 +264,26 @@ def test(model, loader):
             total += gt_labels_t.size(0)
             correct += preds.eq(gt_labels_t).sum().item()
             
+            # Décompte des prédictions de confiance élevée
+            confident_mask = confidences >= args.th
+            confident_predictions += confident_mask.sum().item() # équivalent à 'total'
+            # Décompte des prédictions correctes parmis celles de confiances élevées
+            correct_confident = (preds.eq(gt_labels_t) & confident_mask).sum().item()
+            
     acc = 100. * (float(correct) / total)
     
-    return acc, total, confident_predictions
+    return acc, confident_predictions, correct_confident
 
 if __name__ == '__main__':
     if args.eval:
         print('Eval mode...')
-        acc_test = test(net, target_loader_test)
+        acc_test, confident_predictions_test, correct_confident_test = test(net, target_loader_test)
         print('Model acc: {}'.format(acc_test))
+        step = int(re.search(r'\d+', args.net_resume).group())
+        print('record %s' % record_dir_confident_predictions)
+        with open(record_dir_confident_predictions, 'a') as f:
+            f.write('%d %d %d \n' %
+                    (step, confident_predictions_test, correct_confident_test))
+            
     else:
         train()

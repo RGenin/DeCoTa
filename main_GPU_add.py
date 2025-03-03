@@ -9,6 +9,7 @@ from torch.autograd import Variable
 from model.resnet_model import MetaResnet34
 from utils.lr_schedule import inv_lr_scheduler
 from utils.return_dataset import return_dataset
+import re
 
 parser = argparse.ArgumentParser(description='DeCoTa, previously MiCo, for Semi-supervised Domain Adaptation')
 parser.add_argument('--steps', type=int, default=20000, metavar='N',
@@ -112,7 +113,7 @@ record_file = os.path.join(record_dir,
                            'exp_net_%s_%s_to_%s_num_%s_%d' %
                            (args.net, args.source, args.target, args.num, args.runs))
 
-record_dir_3a = './record/%s/test_classifier' % args.dataset
+record_dir_3a = './record/%s/test_classifier_mico' % args.dataset
 if not os.path.exists(record_dir_3a):
     os.makedirs(record_dir_3a)
 record_file_3a = os.path.join(record_dir_3a,
@@ -301,8 +302,8 @@ def train():
             print(log_train)
 
         if step % args.save_interval == 0:
-            acc_test_net, acc_test_twin, acc_test, total_test, confident_predictions_test = test_ensemble(target_loader_test)
-            acc_val_net, acc_val_twin, acc_val, total_val, confident_predictions = test_ensemble(target_loader_val)
+            acc_test_net, acc_test_twin, acc_test, confident_predictions_test, correct_confident_test = test_ensemble(target_loader_test)
+            acc_val_net, acc_val_twin, acc_val, confident_predictions_val, correct_confident_val = test_ensemble(target_loader_val)
 
             net.train()
             twin.train()
@@ -331,7 +332,7 @@ def train():
             print('record %s' % record_dir_confident_predictions)
             with open(record_dir_confident_predictions, 'a') as f:
                 f.write('%d %d %d \n' %
-                        (step, total_test, confident_predictions_test))
+                        (step, confident_predictions_test, correct_confident_test))
             
             net.train()
             twin.train()
@@ -366,8 +367,6 @@ def test_ensemble(loader):
 
             pred_test_1 = output1.max(1)[1]
             pred_test_2 = output2.max(1)[1]
-            
-            
 
             correct_test_1 += pred_test_1.eq(gt_labels_t).sum().item()
             correct_test_2 += pred_test_2.eq(gt_labels_t).sum().item()
@@ -378,13 +377,19 @@ def test_ensemble(loader):
 
             total += gt_labels_t.size(0)
             correct += pred.eq(gt_labels_t).sum().item()
-            confident_predictions += (confidences >= args.th).sum().item()
+            
+            # Décompte des prédictions de confiance élevée
+            confident_mask = confidences >= args.th
+            confident_predictions += confident_mask.sum().item() # équivalent à 'total'
+            # Décompte des prédictions correctes parmis celles de confiances élevées
+            correct_confident = (pred.eq(gt_labels_t) & confident_mask).sum().item()
+            
 
     acc_test_1 = 100. * (float(correct_test_1)/total)
     acc_test_2 = 100. * (float(correct_test_2)/total)
     acc = 100. * (float(correct)/total)
 
-    return acc_test_1, acc_test_2, acc, total, confident_predictions
+    return acc_test_1, acc_test_2, acc, confident_predictions, correct_confident
 
 def test_classifier_f3a(loader):
     net.eval()
@@ -428,10 +433,21 @@ def test_classifier_f3a(loader):
 if __name__ == '__main__':
     if args.eval:
         print('eval mode...')
-        acc_test_net, acc_test_twin, acc_test = test_ensemble(target_loader_test)
+        acc_test_net, acc_test_twin, acc_test, confident_predictions_test, correct_confident_test = test_ensemble(target_loader_test)
         print('net acc: {}, twin acc: {}, mico acc: {}'.format(acc_test_net, acc_test_twin, acc_test))
+        step = int(re.search(r'\d+', args.net_resume).group())
+        print('record %s' % record_dir_confident_predictions)
+        with open(record_dir_confident_predictions, 'a') as f:
+            f.write('%d %d %d \n' %
+                    (step, confident_predictions_test, correct_confident_test))
+            
     elif args.test_classifier_3a:
         print("evaluating classifier fig.3a ...")
-        test_classifier_f3a(target_loader_test)
+        Hboth, Hone, Hnone = test_classifier_f3a(target_loader_test)
+        step = int(re.search(r'\d+', args.net_resume).group())
+        print('record %s' % record_dir_3a)
+        with open(record_file_3a, 'a') as f:
+            f.write('%d  %d %d %d \n' % (step, Hboth, Hone, Hnone))
+    
     else:
         train()
