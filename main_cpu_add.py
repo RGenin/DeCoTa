@@ -115,6 +115,14 @@ record_file = os.path.join(record_dir,
                         (args.net, args.source,
                             args.target, args.num, args.runs))
 
+record_dir_3a = './record/%s/test_classifier' % args.dataset
+if not os.path.exists(record_dir_3a):
+    os.makedirs(record_dir_3a)
+record_file_3a = os.path.join(record_dir_3a,
+                        'exp_net_%s_%s_to_%s_num_%s_%d' %
+                        (args.net, args.source,
+                            args.target, args.num, args.runs))
+
 
 """ pre-train & resume """
 pretrain_src_checkpoint = './pretrained_models/pretrained_src_{}_to_{}.pth.tar'.format(args.source, args.target) # modèle fine tunné sur la source : twin = wg (UDA) (à vérifier, premier check : parait ok)
@@ -366,6 +374,16 @@ def train():
                                                                                     acc_test,
                                                                                     best_acc_test,
                                                                                     best_acc))
+                
+            Hboth, Hone, Hnone = test_classifier_f3a(target_loader_test)
+            
+            print('record %s' % record_dir_3a)
+            with open(record_file_3a, 'a') as f:
+                f.write('%d  %d %d %d \n' % (step,
+                                                Hboth,
+                                                Hone,
+                                                Hnone))
+            
             net.train()
             twin.train()
             if args.save_check:
@@ -384,6 +402,7 @@ def train():
                                         format(args.method, args.source,
                                             args.target, step)))
 
+            
 
 def test_ensemble(loader): # test les modèles wf et wg sur l'ensemble de test
     net.eval()
@@ -392,6 +411,8 @@ def test_ensemble(loader): # test les modèles wf et wg sur l'ensemble de test
     correct_test_1 = 0
     correct_test_2 = 0
     total = 0
+    
+    confident_predictions = 0
 
     with torch.no_grad():
         for batch_idx, data_t in enumerate(loader):
@@ -409,16 +430,18 @@ def test_ensemble(loader): # test les modèles wf et wg sur l'ensemble de test
 
             """ensemble results"""
             output = torch.softmax(output1, dim=1) + torch.softmax(output2, dim=1) # sommes des distributions de proba (pas supérieur à 1 ???)
-            pred = output.max(1)[1] # récupération du label le plus probable d'après la prédictions
-
+            #pred = output.max(1)[1] # récupération du label le plus probable d'après la prédictions
+            confidences, pred = output.max(1)
+            
             total += gt_labels_t.size(0) # ajout à total des labels utilisés pour les prédictions
             correct += pred.eq(gt_labels_t).sum().item() # ajout des labels bien prédits parla méthode ensembliste
-
+            confident_predictions += (confidences >= args.th).sum().item()
+            
     acc_test_1 = 100. * (float(correct_test_1)/total)  # accuracy du test sur net (UDA)
     acc_test_2 = 100. * (float(correct_test_2)/total)  # idem pour twin (SSL)
     acc = 100. * (float(correct)/total)                # accuracy des deux réseaux assemblées
 
-    return acc_test_1, acc_test_2, acc
+    return acc_test_1, acc_test_2, acc, confident_predictions
 
 def test_classifier_f3a(loader):
     net.eval()
@@ -426,7 +449,7 @@ def test_classifier_f3a(loader):
     
     Hboth = 0
     Hone = 0
-    Hone = 0
+    Hnone = 0
     
     with torch.no_grad():
         for batch_idx, data_t in enumerate(loader):
@@ -434,13 +457,32 @@ def test_classifier_f3a(loader):
             gt_labels_t.resize_(data_t[1].size()).copy_(data_t[1])
             output1 = net(im_data_t) # prédictions des labels par net des images dans target 
             output2 = twin(im_data_t) # prédictions des labels par twin des images dans target
-    
-            """test 1 and 2"""
-            pred_test_1 = output1.max(1)[1] # récupération des prédictions les plus confiantes par net
-            pred_test_2 = output2.max(1)[1] # idem pour twin
             
-            print("pred_test_1 :", pred_test_1, pred_test_1.shape)
-            print("pred_test_2 :", pred_test_2, pred_test_2)
+            '''pseudo-labels'''
+            u_1_prob = torch.softmax(net(im_data_t), dim=1)  # prédictions des étiquettes par le réseau Net sur les données non étiquetées du domaine cible
+            u_1_pred = u_1_prob.max(1)                       # on prend les prédictions les plus élévées pour chaque image du batch
+            u_2_prob = torch.softmax(twin(im_data_t), dim=1) # prédictions des étiquettes par le réseau Twin sur les données non étiquetées du domaine cible
+            u_2_pred = u_2_prob.max(1)                       # on prend les prédictions les plus élévées pour chaque image du batch
+            
+            u_1_mask = u_1_pred[0] >= args.th       # on prend juste les indices des images qui ont eu une prédiction par net > seuil
+            u_2_mask = u_2_pred[0] >= args.th       # on prend juste les indices des images qui ont eu une prédiction par twin > seuil
+        
+            '''comptage des indicateurs'''
+            if len(u_1_mask) != len(u_2_mask):
+                raise ValueError("Les deux listes doivent avoir la même taille")
+    
+            for v1, v2 in zip(u_1_mask, u_2_mask):
+                if v1 == v2 == True:
+                    Hboth += 1
+                elif v1 == v2 == False:
+                    Hnone += 1
+                elif v1 != v2:
+                    Hone += 1
+            
+            print(Hboth, Hone, Hnone)
+
+    return Hboth, Hone, Hnone
+            
             
             
 if __name__ == '__main__':
