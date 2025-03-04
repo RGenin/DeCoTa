@@ -347,7 +347,7 @@ def train():
             
             print('record %s' % record_dir_3a)
             with open(record_file_3a, 'a') as f:
-                f.write('%d  %d %d %d \n' % (step, Hboth, Hone, Hnone)
+                f.write('%d  %d %d %d \n' % (step, Hboth, Hone, Hnone))
                         
             if args.save_check:
                 print(f'Saving models at step: {step}')
